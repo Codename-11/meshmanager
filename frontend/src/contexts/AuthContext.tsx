@@ -1,28 +1,64 @@
-import { createContext, useContext, type ReactNode } from 'react'
-import { useAuth, useLogout } from '../hooks/useAuth'
-import type { UserInfo } from '../types/api'
+import { createContext, useContext, useState, type ReactNode } from 'react'
+import { useAuth, useLogin, useRegister, useLogout } from '../hooks/useAuth'
+import type { LoginRequest, RegisterRequest, UserInfo } from '../types/api'
 
 interface AuthContextValue {
   isAuthenticated: boolean
   isAdmin: boolean
   user: UserInfo | null
   oidcEnabled: boolean
+  setupRequired: boolean
   isLoading: boolean
-  login: () => void
+  showLoginModal: boolean
+  setShowLoginModal: (show: boolean) => void
+  login: (credentials: LoginRequest) => Promise<void>
+  register: (data: RegisterRequest) => Promise<void>
   logout: () => void
+  loginError: string | null
+  isLoggingIn: boolean
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: authStatus, isLoading } = useAuth()
+  const loginMutation = useLogin()
+  const registerMutation = useRegister()
   const logoutMutation = useLogout()
+  const [showLoginModal, setShowLoginModal] = useState(false)
+  const [loginError, setLoginError] = useState<string | null>(null)
 
-  const login = () => {
-    window.location.href = '/auth/login'
+  const handleLogin = async (credentials: LoginRequest) => {
+    setLoginError(null)
+    try {
+      await loginMutation.mutateAsync(credentials)
+      setShowLoginModal(false)
+    } catch (error) {
+      if (error instanceof Error) {
+        setLoginError(error.message)
+      } else {
+        setLoginError('Login failed')
+      }
+      throw error
+    }
   }
 
-  const logout = () => {
+  const handleRegister = async (data: RegisterRequest) => {
+    setLoginError(null)
+    try {
+      await registerMutation.mutateAsync(data)
+      setShowLoginModal(false)
+    } catch (error) {
+      if (error instanceof Error) {
+        setLoginError(error.message)
+      } else {
+        setLoginError('Registration failed')
+      }
+      throw error
+    }
+  }
+
+  const handleLogout = () => {
     logoutMutation.mutate()
   }
 
@@ -31,9 +67,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAdmin: authStatus?.user?.is_admin ?? false,
     user: authStatus?.user ?? null,
     oidcEnabled: authStatus?.oidc_enabled ?? false,
+    setupRequired: authStatus?.setup_required ?? false,
     isLoading,
-    login,
-    logout,
+    showLoginModal,
+    setShowLoginModal,
+    login: handleLogin,
+    register: handleRegister,
+    logout: handleLogout,
+    loginError,
+    isLoggingIn: loginMutation.isPending || registerMutation.isPending,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

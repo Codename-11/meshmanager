@@ -1,7 +1,7 @@
 import { useAuthContext } from '../../contexts/AuthContext'
 
 export default function Header() {
-  const { isAuthenticated, user, oidcEnabled, login, logout } = useAuthContext()
+  const { isAuthenticated, user, logout, setShowLoginModal } = useAuthContext()
 
   return (
     <header className="header">
@@ -10,18 +10,18 @@ export default function Header() {
         {isAuthenticated ? (
           <>
             <span style={{ color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>
-              {user?.display_name || user?.email}
+              {user?.display_name || user?.username || user?.email}
               {user?.is_admin && <span className="badge badge-success" style={{ marginLeft: '0.5rem' }}>Admin</span>}
             </span>
             <button className="btn btn-ghost" onClick={logout}>
               Logout
             </button>
           </>
-        ) : oidcEnabled ? (
-          <button className="btn btn-primary" onClick={login}>
+        ) : (
+          <button className="btn btn-primary" onClick={() => setShowLoginModal(true)}>
             Login
           </button>
-        ) : null}
+        )}
       </div>
     </header>
   )

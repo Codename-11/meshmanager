@@ -1,10 +1,39 @@
 import axios from 'axios'
-import type { AuthStatus, MeshMonitorSourceCreate, MqttSourceCreate, Node, Source } from '../types/api'
+import type {
+  AuthStatus,
+  LoginRequest,
+  MeshMonitorSourceCreate,
+  MqttSourceCreate,
+  Node,
+  RegisterRequest,
+  Source,
+  UserInfo,
+} from '../types/api'
 
 const api = axios.create({
   baseURL: '',
   withCredentials: true,
 })
+
+// Auth
+export async function fetchAuthStatus(): Promise<AuthStatus> {
+  const response = await api.get<AuthStatus>('/auth/status')
+  return response.data
+}
+
+export async function login(credentials: LoginRequest): Promise<{ user: UserInfo }> {
+  const response = await api.post<{ message: string; user: UserInfo }>('/auth/login', credentials)
+  return response.data
+}
+
+export async function register(data: RegisterRequest): Promise<{ user: UserInfo }> {
+  const response = await api.post<{ message: string; user: UserInfo }>('/auth/register', data)
+  return response.data
+}
+
+export async function logout(): Promise<void> {
+  await api.post('/auth/logout')
+}
 
 // Sources
 export async function fetchSources(): Promise<Source[]> {
@@ -49,16 +78,6 @@ export async function fetchNodes(options?: { sourceId?: string; activeOnly?: boo
 export async function fetchNode(id: string): Promise<Node> {
   const response = await api.get<Node>(`/api/nodes/${id}`)
   return response.data
-}
-
-// Auth
-export async function fetchAuthStatus(): Promise<AuthStatus> {
-  const response = await api.get<AuthStatus>('/auth/status')
-  return response.data
-}
-
-export async function logout(): Promise<void> {
-  await api.post('/auth/logout')
 }
 
 // Health

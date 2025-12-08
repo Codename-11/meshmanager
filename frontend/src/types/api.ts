@@ -34,13 +34,28 @@ export interface AuthStatus {
   authenticated: boolean
   user: UserInfo | null
   oidc_enabled: boolean
+  setup_required: boolean
 }
 
 export interface UserInfo {
   id: string
+  username: string | null
   email: string | null
   display_name: string | null
   is_admin: boolean
+  auth_provider: string
+}
+
+export interface LoginRequest {
+  username: string
+  password: string
+}
+
+export interface RegisterRequest {
+  username: string
+  password: string
+  email?: string
+  display_name?: string
 }
 
 export interface SourceCreate {

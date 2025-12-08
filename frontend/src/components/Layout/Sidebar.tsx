@@ -1,13 +1,15 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNodes } from '../../hooks/useNodes'
 import { useSources } from '../../hooks/useSources'
 import { useDataContext } from '../../contexts/DataContext'
 import { useAuthContext } from '../../contexts/AuthContext'
 import NodeList from '../NodeList/NodeList'
+import { AdminPanel } from '../Admin'
 
 export default function Sidebar() {
   const { filterSourceId, showActiveOnly, setShowActiveOnly } = useDataContext()
   const { isAdmin } = useAuthContext()
+  const [showAdminPanel, setShowAdminPanel] = useState(false)
 
   const { data: sources = [], isLoading: sourcesLoading } = useSources()
   const { data: nodes = [], isLoading: nodesLoading } = useNodes({
@@ -77,11 +79,13 @@ export default function Sidebar() {
       {isAdmin && (
         <div className="admin-panel">
           <h3>Admin</h3>
-          <button className="btn btn-secondary" style={{ width: '100%' }} onClick={() => window.location.href = '/admin'}>
+          <button className="btn btn-secondary" style={{ width: '100%' }} onClick={() => setShowAdminPanel(true)}>
             Manage Sources
           </button>
         </div>
       )}
+
+      <AdminPanel isOpen={showAdminPanel} onClose={() => setShowAdminPanel(false)} />
     </aside>
   )
 }

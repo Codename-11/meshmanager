@@ -166,6 +166,20 @@ body {
   color: var(--color-text);
 }
 
+.btn-danger {
+  background-color: var(--color-error);
+  color: var(--ctp-crust);
+}
+
+.btn-danger:hover {
+  background-color: var(--ctp-maroon);
+}
+
+.btn-sm {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.75rem;
+}
+
 /* Node list */
 .node-list {
   flex: 1;

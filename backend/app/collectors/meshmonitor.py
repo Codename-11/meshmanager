@@ -50,7 +50,7 @@ class MeshMonitorCollector(BaseCollector):
 
                 # Try to get nodes
                 response = await client.get(
-                    f"{self.source.url}/api/v1/network/nodes",
+                    f"{self.source.url}/api/nodes",
                     headers=self._get_headers(),
                 )
                 if response.status_code == 200:
@@ -126,7 +126,7 @@ class MeshMonitorCollector(BaseCollector):
         """Collect nodes from the API."""
         try:
             response = await client.get(
-                f"{self.source.url}/api/v1/network/nodes",
+                f"{self.source.url}/api/nodes",
                 headers=headers,
             )
             if response.status_code != 200:
@@ -159,15 +159,30 @@ class MeshMonitorCollector(BaseCollector):
         )
         node = result.scalar()
 
+        # MeshMonitor nests user info in a "user" object
+        user_data = node_data.get("user", {}) or {}
         position = node_data.get("position", {}) or {}
+
+        # Extract fields - try both nested and flat structures
+        node_id = user_data.get("id") or node_data.get("nodeId") or node_data.get("id")
+        short_name = user_data.get("shortName") or node_data.get("shortName")
+        long_name = user_data.get("longName") or node_data.get("longName")
+        hw_model = user_data.get("hwModel") or node_data.get("hwModel")
+        role = user_data.get("role") or node_data.get("role")
+
+        # Convert hw_model to string if it's a number
+        if hw_model is not None:
+            hw_model = str(hw_model)
+        if role is not None:
+            role = str(role)
 
         if node:
             # Update existing node
-            node.node_id = node_data.get("nodeId") or node_data.get("id")
-            node.short_name = node_data.get("shortName")
-            node.long_name = node_data.get("longName")
-            node.hw_model = node_data.get("hwModel")
-            node.role = node_data.get("role")
+            node.node_id = node_id
+            node.short_name = short_name
+            node.long_name = long_name
+            node.hw_model = hw_model
+            node.role = role
             node.latitude = position.get("latitude") or position.get("lat")
             node.longitude = position.get("longitude") or position.get("lon")
             node.altitude = position.get("altitude") or position.get("alt")
@@ -187,11 +202,11 @@ class MeshMonitorCollector(BaseCollector):
             node = Node(
                 source_id=self.source.id,
                 node_num=node_num,
-                node_id=node_data.get("nodeId") or node_data.get("id"),
-                short_name=node_data.get("shortName"),
-                long_name=node_data.get("longName"),
-                hw_model=node_data.get("hwModel"),
-                role=node_data.get("role"),
+                node_id=node_id,
+                short_name=short_name,
+                long_name=long_name,
+                hw_model=hw_model,
+                role=role,
                 latitude=position.get("latitude") or position.get("lat"),
                 longitude=position.get("longitude") or position.get("lon"),
                 altitude=position.get("altitude") or position.get("alt"),

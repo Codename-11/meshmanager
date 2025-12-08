@@ -1,4 +1,4 @@
-"""User model for OIDC authentication."""
+"""User model for local and OIDC authentication."""
 
 from datetime import datetime
 from uuid import uuid4
@@ -11,7 +11,7 @@ from app.database import Base
 
 
 class User(Base):
-    """A user authenticated via OIDC."""
+    """A user authenticated via local credentials or OIDC."""
 
     __tablename__ = "users"
 
@@ -21,9 +21,16 @@ class User(Base):
         default=lambda: str(uuid4()),
     )
 
-    # OIDC identifiers
-    oidc_subject: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    oidc_issuer: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Authentication provider: 'local' or 'oidc'
+    auth_provider: Mapped[str] = mapped_column(String(20), default="local")
+
+    # Local authentication
+    username: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255))
+
+    # OIDC authentication (optional)
+    oidc_subject: Mapped[str | None] = mapped_column(String(255), unique=True)
+    oidc_issuer: Mapped[str | None] = mapped_column(String(500))
 
     # User info
     email: Mapped[str | None] = mapped_column(String(255))
