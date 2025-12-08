@@ -9,10 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy all source files
+COPY . .
+
 # Install Python dependencies
-COPY pyproject.toml .
-RUN pip install --no-cache-dir build && \
-    pip install --no-cache-dir .
+RUN pip install --no-cache-dir .
 
 # Production stage
 FROM python:3.12-slim
