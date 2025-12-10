@@ -527,6 +527,261 @@ async def export_kml(db: AsyncSession = Depends(get_db)) -> Response:
     )
 
 
+async def _get_position_points(
+    db: AsyncSession,
+    lookback_days: int = 7,
+    bounds_south: float | None = None,
+    bounds_west: float | None = None,
+    bounds_north: float | None = None,
+    bounds_east: float | None = None,
+) -> list[dict]:
+    """Get position points for export (internal helper)."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+
+    # Get latitude records
+    lat_query = (
+        select(Telemetry)
+        .where(Telemetry.received_at >= cutoff)
+        .where(Telemetry.metric_name.in_(["latitude", "estimated_latitude"]))
+        .where(Telemetry.latitude.isnot(None))
+    )
+    lat_result = await db.execute(lat_query)
+    lat_records = lat_result.scalars().all()
+
+    # Get longitude records
+    lng_query = (
+        select(Telemetry)
+        .where(Telemetry.received_at >= cutoff)
+        .where(Telemetry.metric_name.in_(["longitude", "estimated_longitude"]))
+        .where(Telemetry.longitude.isnot(None))
+    )
+    lng_result = await db.execute(lng_query)
+    lng_records = lng_result.scalars().all()
+
+    # Match lat/lng by timestamp
+    lng_lookup = {}
+    for lng in lng_records:
+        ts_key = lng.received_at.replace(second=0, microsecond=0)
+        key = (str(lng.source_id), lng.node_num, ts_key)
+        if key not in lng_lookup:
+            lng_lookup[key] = (lng.longitude, lng.received_at)
+
+    positions = []
+    for lat in lat_records:
+        ts_key = lat.received_at.replace(second=0, microsecond=0)
+        key = (str(lat.source_id), lat.node_num, ts_key)
+        lng_data = lng_lookup.get(key)
+        if lng_data is not None:
+            positions.append({
+                "lat": lat.latitude,
+                "lng": lng_data[0],
+                "node_num": lat.node_num,
+                "timestamp": lat.received_at.isoformat(),
+            })
+
+    # Filter by bounds if specified
+    if all([bounds_south, bounds_west, bounds_north, bounds_east]):
+        positions = [
+            p for p in positions
+            if bounds_south <= p["lat"] <= bounds_north
+            and bounds_west <= p["lng"] <= bounds_east
+        ]
+
+    return positions
+
+
+@router.get("/export/csv")
+async def export_csv(
+    lookback_days: int = 7,
+    bounds_south: float | None = None,
+    bounds_west: float | None = None,
+    bounds_north: float | None = None,
+    bounds_east: float | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Export position points as CSV file with headers."""
+    import csv
+    import io
+
+    positions = await _get_position_points(
+        db, lookback_days, bounds_south, bounds_west, bounds_north, bounds_east
+    )
+
+    if not positions:
+        raise HTTPException(status_code=404, detail="No position data to export")
+
+    # Create CSV in memory
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header row
+    writer.writerow(["latitude", "longitude", "node_num", "timestamp"])
+
+    # Write data rows
+    for pos in positions:
+        writer.writerow([pos["lat"], pos["lng"], pos["node_num"], pos["timestamp"]])
+
+    csv_content = output.getvalue()
+
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=positions.csv"},
+    )
+
+
+@router.get("/export/shapefile")
+async def export_shapefile(
+    lookback_days: int = 7,
+    bounds_south: float | None = None,
+    bounds_west: float | None = None,
+    bounds_north: float | None = None,
+    bounds_east: float | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Export position points as Shapefile (.shp in a ZIP archive)."""
+    try:
+        import fiona
+        from fiona.crs import CRS
+        import zipfile
+        import os
+    except ImportError as e:
+        raise HTTPException(
+            status_code=501,
+            detail=f"Shapefile export requires fiona: {e}",
+        )
+
+    positions = await _get_position_points(
+        db, lookback_days, bounds_south, bounds_west, bounds_north, bounds_east
+    )
+
+    if not positions:
+        raise HTTPException(status_code=404, detail="No position data to export")
+
+    # Create shapefile in temp directory
+    with tempfile.TemporaryDirectory() as tmpdir:
+        shp_path = os.path.join(tmpdir, "positions.shp")
+
+        # Define schema for point features
+        schema = {
+            "geometry": "Point",
+            "properties": {
+                "node_num": "int",
+                "timestamp": "str",
+            },
+        }
+
+        # Write shapefile
+        with fiona.open(
+            shp_path,
+            "w",
+            driver="ESRI Shapefile",
+            crs=CRS.from_epsg(4326),
+            schema=schema,
+        ) as shp:
+            for pos in positions:
+                shp.write({
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": (pos["lng"], pos["lat"]),
+                    },
+                    "properties": {
+                        "node_num": pos["node_num"],
+                        "timestamp": pos["timestamp"],
+                    },
+                })
+
+        # Create ZIP archive with all shapefile components
+        zip_path = os.path.join(tmpdir, "positions.zip")
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for ext in [".shp", ".shx", ".dbf", ".prj", ".cpg"]:
+                file_path = os.path.join(tmpdir, f"positions{ext}")
+                if os.path.exists(file_path):
+                    zf.write(file_path, f"positions{ext}")
+
+        # Read ZIP content
+        with open(zip_path, "rb") as f:
+            zip_content = f.read()
+
+    return Response(
+        content=zip_content,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=positions.zip"},
+    )
+
+
+@router.get("/export/geopackage")
+async def export_geopackage(
+    lookback_days: int = 7,
+    bounds_south: float | None = None,
+    bounds_west: float | None = None,
+    bounds_north: float | None = None,
+    bounds_east: float | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Export position points as GeoPackage (.gpkg) - OGC standard geodatabase format."""
+    try:
+        import fiona
+        from fiona.crs import CRS
+        import os
+    except ImportError as e:
+        raise HTTPException(
+            status_code=501,
+            detail=f"GeoPackage export requires fiona: {e}",
+        )
+
+    positions = await _get_position_points(
+        db, lookback_days, bounds_south, bounds_west, bounds_north, bounds_east
+    )
+
+    if not positions:
+        raise HTTPException(status_code=404, detail="No position data to export")
+
+    # Create GeoPackage in temp directory
+    with tempfile.TemporaryDirectory() as tmpdir:
+        gpkg_path = os.path.join(tmpdir, "positions.gpkg")
+
+        # Define schema for point features
+        schema = {
+            "geometry": "Point",
+            "properties": {
+                "node_num": "int",
+                "timestamp": "str",
+            },
+        }
+
+        # Write GeoPackage
+        with fiona.open(
+            gpkg_path,
+            "w",
+            driver="GPKG",
+            crs=CRS.from_epsg(4326),
+            schema=schema,
+            layer="positions",
+        ) as gpkg:
+            for pos in positions:
+                gpkg.write({
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": (pos["lng"], pos["lat"]),
+                    },
+                    "properties": {
+                        "node_num": pos["node_num"],
+                        "timestamp": pos["timestamp"],
+                    },
+                })
+
+        # Read file content
+        with open(gpkg_path, "rb") as f:
+            gpkg_content = f.read()
+
+    return Response(
+        content=gpkg_content,
+        media_type="application/geopackage+sqlite3",
+        headers={"Content-Disposition": "attachment; filename=positions.gpkg"},
+    )
+
+
 @router.get("/export/geotiff")
 async def export_geotiff(db: AsyncSession = Depends(get_db)) -> Response:
     """Export coverage grid as GeoTIFF with 32-bit count values."""
