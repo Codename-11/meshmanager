@@ -400,7 +400,7 @@ class MeshMonitorCollector(BaseCollector):
         # Determine telemetry type based on the field
         if telem_type_field in ("batteryLevel", "voltage", "channelUtilization", "airUtilTx", "uptimeSeconds"):
             telem_type = TelemetryType.DEVICE
-        elif telem_type_field in ("temperature", "relativeHumidity", "barometricPressure"):
+        elif telem_type_field in ("temperature", "relativeHumidity", "barometricPressure", "humidity", "pressure"):
             telem_type = TelemetryType.ENVIRONMENT
         elif telem_type_field in ("snr_local", "snr_remote", "rssi"):
             telem_type = TelemetryType.DEVICE  # Signal metrics go with device
@@ -437,8 +437,8 @@ class MeshMonitorCollector(BaseCollector):
                 "air_util_tx": float(value) if telem_type_field == "airUtilTx" else None,
                 "uptime_seconds": int(value) if telem_type_field == "uptimeSeconds" else None,
                 "temperature": float(value) if telem_type_field == "temperature" else None,
-                "relative_humidity": float(value) if telem_type_field == "relativeHumidity" else None,
-                "barometric_pressure": float(value) if telem_type_field == "barometricPressure" else None,
+                "relative_humidity": float(value) if telem_type_field in ("relativeHumidity", "humidity") else None,
+                "barometric_pressure": float(value) if telem_type_field in ("barometricPressure", "pressure") else None,
                 "snr_local": float(value) if telem_type_field == "snr_local" else None,
                 "snr_remote": float(value) if telem_type_field == "snr_remote" else None,
                 "rssi": float(value) if telem_type_field == "rssi" else None,
