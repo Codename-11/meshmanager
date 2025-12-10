@@ -324,14 +324,15 @@ async def get_position_history(
     for lng in lng_records:
         # Round timestamp to nearest minute for matching
         ts_key = lng.received_at.replace(second=0, microsecond=0)
-        key = (lng.source_id, lng.node_num, ts_key)
+        # Use str() for source_id to ensure consistent dict keys
+        key = (str(lng.source_id), lng.node_num, ts_key)
         if key not in lng_lookup:
             lng_lookup[key] = lng.longitude
 
     positions = []
     for lat in lat_records:
         ts_key = lat.received_at.replace(second=0, microsecond=0)
-        key = (lat.source_id, lat.node_num, ts_key)
+        key = (str(lat.source_id), lat.node_num, ts_key)
         lng_value = lng_lookup.get(key)
         if lng_value is not None:
             positions.append({
