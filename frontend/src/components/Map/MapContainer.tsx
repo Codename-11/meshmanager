@@ -6,9 +6,10 @@ import { useNodes } from '../../hooks/useNodes'
 import { useTraceroutes } from '../../hooks/useMapData'
 import { useDataContext } from '../../contexts/DataContext'
 import { getTilesetById, DEFAULT_TILESET_ID, type TilesetId } from '../../config/tilesets'
-import { fetchCoverageConfig, fetchCoverageCells, fetchPositionHistory } from '../../services/api'
+import { fetchCoverageConfig, fetchCoverageCells, fetchPositionHistory, fetchUtilizationConfig, fetchUtilizationCells } from '../../services/api'
 import MapControls from './MapControls'
 import CoverageImageOverlay from './CoverageImageOverlay'
+import UtilizationImageOverlay from './UtilizationImageOverlay'
 import HeatmapLayer from './HeatmapLayer'
 import type { Node } from '../../types/api'
 import 'leaflet/dist/leaflet.css'
@@ -18,8 +19,10 @@ const STORAGE_KEY_TILESET = 'meshmanager_map_tileset'
 const STORAGE_KEY_SHOW_ROUTES = 'meshmanager_map_show_routes'
 const STORAGE_KEY_ENABLED_ROLES = 'meshmanager_map_enabled_roles'
 const STORAGE_KEY_SHOW_COVERAGE = 'meshmanager_map_show_coverage'
+const STORAGE_KEY_SHOW_UTILIZATION = 'meshmanager_map_show_utilization'
 const STORAGE_KEY_SHOW_POSITION_HISTORY = 'meshmanager_map_show_position_history'
 const STORAGE_KEY_POSITION_HISTORY_DAYS = 'meshmanager_map_position_history_days'
+const STORAGE_KEY_SHOW_NODES = 'meshmanager_map_show_nodes'
 
 // Coverage legend colors (matching backend)
 const COVERAGE_LEGEND = [
@@ -30,6 +33,17 @@ const COVERAGE_LEGEND = [
   { color: 'rgba(255, 69, 0, 0.7)', label: '6-7' },
   { color: 'rgba(255, 0, 0, 0.8)', label: '8-9' },
   { color: 'rgba(139, 0, 0, 0.8)', label: '10+' },
+]
+
+// Utilization legend colors (matching backend - green to red for 0-100%)
+const UTILIZATION_LEGEND = [
+  { color: 'rgba(0, 128, 0, 0.5)', label: '0-10%' },
+  { color: 'rgba(50, 205, 50, 0.5)', label: '10-25%' },
+  { color: 'rgba(154, 205, 50, 0.5)', label: '25-40%' },
+  { color: 'rgba(255, 255, 0, 0.5)', label: '40-55%' },
+  { color: 'rgba(255, 165, 0, 0.6)', label: '55-70%' },
+  { color: 'rgba(255, 69, 0, 0.6)', label: '70-85%' },
+  { color: 'rgba(255, 0, 0, 0.7)', label: '85-100%' },
 ]
 
 // Load settings from localStorage
@@ -133,11 +147,17 @@ export default function MapContainer() {
   const [showCoverage, setShowCoverage] = useState<boolean>(() =>
     loadSetting(STORAGE_KEY_SHOW_COVERAGE, false)
   )
+  const [showUtilization, setShowUtilization] = useState<boolean>(() =>
+    loadSetting(STORAGE_KEY_SHOW_UTILIZATION, false)
+  )
   const [showPositionHistory, setShowPositionHistory] = useState<boolean>(() =>
     loadSetting(STORAGE_KEY_SHOW_POSITION_HISTORY, false)
   )
   const [positionHistoryDays, setPositionHistoryDays] = useState<number>(() =>
     loadSetting(STORAGE_KEY_POSITION_HISTORY_DAYS, 7)
+  )
+  const [showNodes, setShowNodes] = useState<boolean>(() =>
+    loadSetting(STORAGE_KEY_SHOW_NODES, true)
   )
 
   const tileset = getTilesetById(tilesetId)
@@ -152,6 +172,18 @@ export default function MapContainer() {
     queryKey: ['coverage-cells'],
     queryFn: fetchCoverageCells,
     enabled: showCoverage && (coverageConfig?.enabled ?? false) && (coverageConfig?.cell_count ?? 0) > 0,
+  })
+
+  // Utilization data queries
+  const { data: utilizationConfig } = useQuery({
+    queryKey: ['utilization-config'],
+    queryFn: fetchUtilizationConfig,
+  })
+
+  const { data: utilizationCells = [] } = useQuery({
+    queryKey: ['utilization-cells'],
+    queryFn: fetchUtilizationCells,
+    enabled: showUtilization && (utilizationConfig?.enabled ?? false) && (utilizationConfig?.cell_count ?? 0) > 0,
   })
 
   // Position history for heatmap
@@ -203,6 +235,11 @@ export default function MapContainer() {
     saveSetting(STORAGE_KEY_SHOW_COVERAGE, show)
   }, [])
 
+  const handleShowUtilizationChange = useCallback((show: boolean) => {
+    setShowUtilization(show)
+    saveSetting(STORAGE_KEY_SHOW_UTILIZATION, show)
+  }, [])
+
   const handleShowPositionHistoryChange = useCallback((show: boolean) => {
     setShowPositionHistory(show)
     saveSetting(STORAGE_KEY_SHOW_POSITION_HISTORY, show)
@@ -211,6 +248,11 @@ export default function MapContainer() {
   const handlePositionHistoryDaysChange = useCallback((days: number) => {
     setPositionHistoryDays(days)
     saveSetting(STORAGE_KEY_POSITION_HISTORY_DAYS, days)
+  }, [])
+
+  const handleShowNodesChange = useCallback((show: boolean) => {
+    setShowNodes(show)
+    saveSetting(STORAGE_KEY_SHOW_NODES, show)
   }, [])
 
   // Filter by enabled sources, roles, and deduplicate (same logic as Sidebar)
@@ -363,11 +405,17 @@ export default function MapContainer() {
         onShowCoverageChange={handleShowCoverageChange}
         coverageEnabled={coverageConfig?.enabled ?? false}
         coverageCellCount={coverageConfig?.cell_count ?? 0}
+        showUtilization={showUtilization}
+        onShowUtilizationChange={handleShowUtilizationChange}
+        utilizationEnabled={utilizationConfig?.enabled ?? false}
+        utilizationCellCount={utilizationConfig?.cell_count ?? 0}
         showPositionHistory={showPositionHistory}
         onShowPositionHistoryChange={handleShowPositionHistoryChange}
         positionHistoryDays={positionHistoryDays}
         onPositionHistoryDaysChange={handlePositionHistoryDaysChange}
         positionHistoryCount={positionHistory.length}
+        showNodes={showNodes}
+        onShowNodesChange={handleShowNodesChange}
       />
       <LeafletMapContainer
         center={center}
@@ -385,6 +433,11 @@ export default function MapContainer() {
         {/* Coverage overlay - Image rendered from grid */}
         {showCoverage && coverageCells.length > 0 && (
           <CoverageImageOverlay cells={coverageCells} blur={8} />
+        )}
+
+        {/* Utilization overlay - Image rendered from grid */}
+        {showUtilization && utilizationCells.length > 0 && (
+          <UtilizationImageOverlay cells={utilizationCells} blur={8} />
         )}
 
         {/* Position history heatmap */}
@@ -405,7 +458,7 @@ export default function MapContainer() {
           />
         ))}
 
-        {nodesWithPosition.map((node) => {
+        {showNodes && nodesWithPosition.map((node) => {
           const isSelected = selectedNode?.id === node.id
           const displayName = node.long_name || node.short_name || node.node_id || `Node ${node.node_num}`
 
@@ -454,6 +507,36 @@ export default function MapContainer() {
           <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Position Reports</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
             {COVERAGE_LEGEND.map(({ color, label }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  background: color,
+                  border: '1px solid rgba(255,255,255,0.3)',
+                }} />
+                <span>{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Utilization Legend */}
+      {showUtilization && utilizationCells.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          bottom: '20px',
+          left: '20px',
+          background: 'var(--color-surface)',
+          padding: '0.75rem',
+          borderRadius: '8px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          zIndex: 1000,
+          fontSize: '0.75rem',
+        }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Channel Utilization</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {UTILIZATION_LEGEND.map(({ color, label }) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <div style={{
                   width: '16px',

@@ -9,6 +9,7 @@ from app.models.source import Source
 from app.models.telemetry import Telemetry
 from app.models.traceroute import Traceroute
 from app.models.user import User
+from app.models.utilization import UtilizationCell
 
 __all__ = [
     "Channel",
@@ -20,4 +21,5 @@ __all__ = [
     "Telemetry",
     "Traceroute",
     "User",
+    "UtilizationCell",
 ]

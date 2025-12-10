@@ -216,3 +216,67 @@ export async function fetchPositionHistory(params?: PositionHistoryParams): Prom
   const response = await api.get<PositionPoint[]>('/api/coverage/positions', { params })
   return response.data
 }
+
+// Utilization Map
+export type AggregationType = 'min' | 'max' | 'avg'
+
+export interface UtilizationConfig {
+  enabled: boolean
+  resolution: number
+  unit: 'miles' | 'kilometers'
+  lookback_days: number
+  aggregation: AggregationType
+  bounds_south: number | null
+  bounds_west: number | null
+  bounds_north: number | null
+  bounds_east: number | null
+  last_generated: string | null
+  cell_count: number
+}
+
+export interface UtilizationConfigUpdate {
+  enabled: boolean
+  resolution: number
+  unit: 'miles' | 'kilometers'
+  lookback_days: number
+  aggregation: AggregationType
+  bounds_south: number | null
+  bounds_west: number | null
+  bounds_north: number | null
+  bounds_east: number | null
+}
+
+export interface UtilizationCell {
+  south: number
+  west: number
+  north: number
+  east: number
+  value: number
+  color: string
+}
+
+export interface UtilizationGenerateResponse {
+  success: boolean
+  cell_count: number
+  message: string
+}
+
+export async function fetchUtilizationConfig(): Promise<UtilizationConfig> {
+  const response = await api.get<UtilizationConfig>('/api/utilization/config')
+  return response.data
+}
+
+export async function updateUtilizationConfig(config: UtilizationConfigUpdate): Promise<UtilizationConfig> {
+  const response = await api.put<UtilizationConfig>('/api/utilization/config', config)
+  return response.data
+}
+
+export async function generateUtilization(): Promise<UtilizationGenerateResponse> {
+  const response = await api.post<UtilizationGenerateResponse>('/api/utilization/generate')
+  return response.data
+}
+
+export async function fetchUtilizationCells(): Promise<UtilizationCell[]> {
+  const response = await api.get<UtilizationCell[]>('/api/utilization/cells')
+  return response.data
+}

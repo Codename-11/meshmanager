@@ -6,6 +6,7 @@ from app.routers.health import router as health_router
 from app.routers.metrics import router as metrics_router
 from app.routers.sources import router as sources_router
 from app.routers.ui import router as ui_router
+from app.routers.utilization import router as utilization_router
 
 __all__ = [
     "auth_router",
@@ -14,4 +15,5 @@ __all__ = [
     "metrics_router",
     "sources_router",
     "ui_router",
+    "utilization_router",
 ]

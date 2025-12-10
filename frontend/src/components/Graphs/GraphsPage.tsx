@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { MapContainer as LeafletMapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchCoverageConfig, updateCoverageConfig, generateCoverage, type CoverageConfigUpdate } from '../../services/api'
+import {
+  fetchCoverageConfig, updateCoverageConfig, generateCoverage, type CoverageConfigUpdate,
+  fetchUtilizationConfig, updateUtilizationConfig, generateUtilization, type UtilizationConfigUpdate, type AggregationType,
+} from '../../services/api'
 import { getTilesetById, DEFAULT_TILESET_ID } from '../../config/tilesets'
 import 'leaflet/dist/leaflet.css'
 
@@ -64,13 +67,22 @@ export default function GraphsPage() {
   const queryClient = useQueryClient()
   const tileset = getTilesetById(DEFAULT_TILESET_ID)
 
-  // Local form state
+  // Coverage form state
   const [enabled, setEnabled] = useState(false)
   const [resolution, setResolution] = useState(1)
   const [unit, setUnit] = useState<UnitType>('miles')
   const [lookbackDays, setLookbackDays] = useState(7)
   const [currentBounds, setCurrentBounds] = useState<{ south: number; west: number; north: number; east: number } | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+
+  // Utilization form state
+  const [utilEnabled, setUtilEnabled] = useState(false)
+  const [utilResolution, setUtilResolution] = useState(1)
+  const [utilUnit, setUtilUnit] = useState<UnitType>('miles')
+  const [utilLookbackDays, setUtilLookbackDays] = useState(7)
+  const [utilAggregation, setUtilAggregation] = useState<AggregationType>('avg')
+  const [utilBounds, setUtilBounds] = useState<{ south: number; west: number; north: number; east: number } | null>(null)
+  const [utilHasUnsavedChanges, setUtilHasUnsavedChanges] = useState(false)
 
   // Fetch current config
   const { data: config, isLoading: configLoading } = useQuery({
@@ -111,6 +123,49 @@ export default function GraphsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['coverage-config'] })
       queryClient.invalidateQueries({ queryKey: ['coverage-cells'] })
+    },
+  })
+
+  // Fetch utilization config
+  const { data: utilConfig, isLoading: utilConfigLoading } = useQuery({
+    queryKey: ['utilization-config'],
+    queryFn: fetchUtilizationConfig,
+  })
+
+  // Initialize utilization form from config
+  useEffect(() => {
+    if (utilConfig) {
+      setUtilEnabled(utilConfig.enabled)
+      setUtilResolution(utilConfig.resolution)
+      setUtilUnit(utilConfig.unit as UnitType)
+      setUtilLookbackDays(utilConfig.lookback_days)
+      setUtilAggregation(utilConfig.aggregation as AggregationType)
+      if (utilConfig.bounds_south && utilConfig.bounds_west && utilConfig.bounds_north && utilConfig.bounds_east) {
+        setUtilBounds({
+          south: utilConfig.bounds_south,
+          west: utilConfig.bounds_west,
+          north: utilConfig.bounds_north,
+          east: utilConfig.bounds_east,
+        })
+      }
+    }
+  }, [utilConfig])
+
+  // Update utilization config mutation
+  const utilUpdateMutation = useMutation({
+    mutationFn: (data: UtilizationConfigUpdate) => updateUtilizationConfig(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['utilization-config'] })
+      setUtilHasUnsavedChanges(false)
+    },
+  })
+
+  // Generate utilization mutation
+  const utilGenerateMutation = useMutation({
+    mutationFn: generateUtilization,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['utilization-config'] })
+      queryClient.invalidateQueries({ queryKey: ['utilization-cells'] })
     },
   })
 
@@ -169,6 +224,65 @@ export default function GraphsPage() {
     setHasUnsavedChanges(false)
   }
 
+  // Utilization handlers
+  const handleUtilBoundsChange = useCallback((bounds: { south: number; west: number; north: number; east: number }) => {
+    setUtilBounds(bounds)
+    setUtilHasUnsavedChanges(true)
+  }, [])
+
+  const handleUtilSave = () => {
+    utilUpdateMutation.mutate({
+      enabled: utilEnabled,
+      resolution: utilResolution,
+      unit: utilUnit,
+      lookback_days: utilLookbackDays,
+      aggregation: utilAggregation,
+      bounds_south: utilBounds?.south ?? null,
+      bounds_west: utilBounds?.west ?? null,
+      bounds_north: utilBounds?.north ?? null,
+      bounds_east: utilBounds?.east ?? null,
+    })
+  }
+
+  const handleUtilGenerate = () => {
+    // Save first, then generate
+    utilUpdateMutation.mutate({
+      enabled: utilEnabled,
+      resolution: utilResolution,
+      unit: utilUnit,
+      lookback_days: utilLookbackDays,
+      aggregation: utilAggregation,
+      bounds_south: utilBounds?.south ?? null,
+      bounds_west: utilBounds?.west ?? null,
+      bounds_north: utilBounds?.north ?? null,
+      bounds_east: utilBounds?.east ?? null,
+    }, {
+      onSuccess: () => {
+        utilGenerateMutation.mutate()
+      },
+    })
+  }
+
+  const handleUtilCancel = () => {
+    // Reset form to config values
+    if (utilConfig) {
+      setUtilEnabled(utilConfig.enabled)
+      setUtilResolution(utilConfig.resolution)
+      setUtilUnit(utilConfig.unit as UnitType)
+      setUtilLookbackDays(utilConfig.lookback_days)
+      setUtilAggregation(utilConfig.aggregation as AggregationType)
+      if (utilConfig.bounds_south && utilConfig.bounds_west && utilConfig.bounds_north && utilConfig.bounds_east) {
+        setUtilBounds({
+          south: utilConfig.bounds_south,
+          west: utilConfig.bounds_west,
+          north: utilConfig.bounds_north,
+          east: utilConfig.bounds_east,
+        })
+      }
+    }
+    setUtilHasUnsavedChanges(false)
+  }
+
   // Default center (US)
   const defaultCenter: [number, number] = [39.8283, -98.5795]
 
@@ -177,7 +291,12 @@ export default function GraphsPage() {
     ? { south: config.bounds_south, west: config.bounds_west, north: config.bounds_north, east: config.bounds_east }
     : null
 
-  if (configLoading) {
+  // Initial utilization bounds from config
+  const utilInitialBounds = utilConfig?.bounds_south && utilConfig?.bounds_west && utilConfig?.bounds_north && utilConfig?.bounds_east
+    ? { south: utilConfig.bounds_south, west: utilConfig.bounds_west, north: utilConfig.bounds_north, east: utilConfig.bounds_east }
+    : null
+
+  if (configLoading || utilConfigLoading) {
     return (
       <div className="graphs-page">
         <div className="settings-header">
@@ -499,6 +618,259 @@ export default function GraphsPage() {
                 />
                 <BoundsTracker onBoundsChange={handleBoundsChange} />
                 {initialBounds && <InitialBoundsSetter bounds={initialBounds} />}
+              </LeafletMapContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Utilization Overlay Configuration */}
+        <div style={{
+          background: 'var(--color-surface)',
+          borderRadius: '8px',
+          border: '1px solid var(--color-border)',
+          overflow: 'hidden',
+          marginTop: '1.5rem',
+        }}>
+          <div style={{
+            padding: '1rem 1.5rem',
+            borderBottom: '1px solid var(--color-border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Utilization Overlay</h2>
+              <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
+                Configure the channel utilization heatmap overlay. Shows network congestion based on node telemetry.
+              </p>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={utilEnabled}
+                onChange={e => {
+                  setUtilEnabled(e.target.checked)
+                  setUtilHasUnsavedChanges(true)
+                }}
+                style={{ width: '18px', height: '18px' }}
+              />
+              <span>Enable</span>
+            </label>
+          </div>
+
+          {/* Configuration Controls */}
+          <div style={{
+            padding: '1rem 1.5rem',
+            borderBottom: '1px solid var(--color-border)',
+            display: 'flex',
+            gap: '2rem',
+            flexWrap: 'wrap',
+            alignItems: 'flex-end',
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
+                Resolution
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  type="number"
+                  min="0.1"
+                  max="100"
+                  step="0.1"
+                  value={utilResolution}
+                  onChange={e => {
+                    setUtilResolution(parseFloat(e.target.value) || 1)
+                    setUtilHasUnsavedChanges(true)
+                  }}
+                  style={{
+                    width: '80px',
+                    padding: '0.5rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--color-border)',
+                    background: 'var(--color-background)',
+                    color: 'var(--color-text)',
+                  }}
+                />
+                <select
+                  value={utilUnit}
+                  onChange={e => {
+                    setUtilUnit(e.target.value as UnitType)
+                    setUtilHasUnsavedChanges(true)
+                  }}
+                  style={{
+                    padding: '0.5rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--color-border)',
+                    background: 'var(--color-background)',
+                    color: 'var(--color-text)',
+                  }}
+                >
+                  <option value="miles">Miles</option>
+                  <option value="kilometers">Kilometers</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
+                Lookback Period
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={utilLookbackDays}
+                  onChange={e => {
+                    setUtilLookbackDays(parseInt(e.target.value) || 7)
+                    setUtilHasUnsavedChanges(true)
+                  }}
+                  style={{
+                    width: '60px',
+                    padding: '0.5rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--color-border)',
+                    background: 'var(--color-background)',
+                    color: 'var(--color-text)',
+                  }}
+                />
+                <span style={{ color: 'var(--color-text-muted)' }}>days</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
+                Aggregation
+              </label>
+              <select
+                value={utilAggregation}
+                onChange={e => {
+                  setUtilAggregation(e.target.value as AggregationType)
+                  setUtilHasUnsavedChanges(true)
+                }}
+                style={{
+                  padding: '0.5rem',
+                  borderRadius: '4px',
+                  border: '1px solid var(--color-border)',
+                  background: 'var(--color-background)',
+                  color: 'var(--color-text)',
+                }}
+              >
+                <option value="min">Minimum</option>
+                <option value="max">Maximum</option>
+                <option value="avg">Average</option>
+              </select>
+            </div>
+
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.75rem' }}>
+              <button
+                onClick={handleUtilCancel}
+                disabled={!utilHasUnsavedChanges}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '4px',
+                  border: '1px solid var(--color-border)',
+                  background: 'var(--color-surface)',
+                  color: 'var(--color-text)',
+                  cursor: utilHasUnsavedChanges ? 'pointer' : 'default',
+                  opacity: utilHasUnsavedChanges ? 1 : 0.5,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUtilSave}
+                disabled={utilUpdateMutation.isPending || !utilHasUnsavedChanges}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '4px',
+                  border: '1px solid var(--color-border)',
+                  background: utilHasUnsavedChanges ? 'var(--color-primary)' : 'var(--color-surface)',
+                  color: utilHasUnsavedChanges ? 'white' : 'var(--color-text)',
+                  cursor: utilHasUnsavedChanges ? 'pointer' : 'default',
+                  opacity: utilHasUnsavedChanges ? 1 : 0.5,
+                }}
+              >
+                {utilUpdateMutation.isPending ? 'Saving...' : 'Save'}
+              </button>
+              <button
+                onClick={handleUtilGenerate}
+                disabled={utilGenerateMutation.isPending || utilUpdateMutation.isPending}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '4px',
+                  border: 'none',
+                  background: 'var(--color-success)',
+                  color: 'white',
+                  cursor: 'pointer',
+                }}
+              >
+                {utilGenerateMutation.isPending ? 'Generating...' : 'Generate Now'}
+              </button>
+            </div>
+          </div>
+
+          {/* Status Info */}
+          {utilConfig && (
+            <div style={{
+              padding: '0.75rem 1.5rem',
+              borderBottom: '1px solid var(--color-border)',
+              background: 'var(--color-background)',
+              fontSize: '0.875rem',
+              display: 'flex',
+              gap: '2rem',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}>
+              <span>
+                <strong>Cells:</strong> {utilConfig.cell_count.toLocaleString()}
+              </span>
+              {utilConfig.last_generated && (
+                <span>
+                  <strong>Last Generated:</strong> {new Date(utilConfig.last_generated).toLocaleString()}
+                </span>
+              )}
+              {utilGenerateMutation.isSuccess && utilGenerateMutation.data && (
+                <span style={{ color: 'var(--color-success)' }}>
+                  {utilGenerateMutation.data.message}
+                </span>
+              )}
+              {utilGenerateMutation.isError && (
+                <span style={{ color: 'var(--color-error)' }}>
+                  Generation failed
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Boundary Selection Map */}
+          <div style={{ padding: '1rem 1.5rem' }}>
+            <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
+              Pan and zoom the map to set the utilization calculation bounds. Only telemetry within these bounds will be included.
+            </div>
+            {utilBounds && (
+              <div style={{ marginBottom: '0.5rem', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--color-text-muted)' }}>
+                Bounds: {utilBounds.south.toFixed(4)}N to {utilBounds.north.toFixed(4)}N, {utilBounds.west.toFixed(4)}W to {utilBounds.east.toFixed(4)}E
+              </div>
+            )}
+            <div style={{
+              height: '400px',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              border: '1px solid var(--color-border)',
+            }}>
+              <LeafletMapContainer
+                center={defaultCenter}
+                zoom={4}
+                style={{ height: '100%', width: '100%' }}
+              >
+                <TileLayer
+                  attribution={tileset.attribution}
+                  url={tileset.url}
+                  maxZoom={tileset.maxZoom}
+                />
+                <BoundsTracker onBoundsChange={handleUtilBoundsChange} />
+                {utilInitialBounds && <InitialBoundsSetter bounds={utilInitialBounds} />}
               </LeafletMapContainer>
             </div>
           </div>

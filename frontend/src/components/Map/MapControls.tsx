@@ -14,11 +14,17 @@ interface MapControlsProps {
   onShowCoverageChange: (show: boolean) => void
   coverageEnabled: boolean
   coverageCellCount: number
+  showUtilization: boolean
+  onShowUtilizationChange: (show: boolean) => void
+  utilizationEnabled: boolean
+  utilizationCellCount: number
   showPositionHistory: boolean
   onShowPositionHistoryChange: (show: boolean) => void
   positionHistoryDays: number
   onPositionHistoryDaysChange: (days: number) => void
   positionHistoryCount: number
+  showNodes: boolean
+  onShowNodesChange: (show: boolean) => void
 }
 
 export default function MapControls({
@@ -32,11 +38,17 @@ export default function MapControls({
   onShowCoverageChange,
   coverageEnabled,
   coverageCellCount,
+  showUtilization,
+  onShowUtilizationChange,
+  utilizationEnabled,
+  utilizationCellCount,
   showPositionHistory,
   onShowPositionHistoryChange,
   positionHistoryDays,
   onPositionHistoryDaysChange,
   positionHistoryCount,
+  showNodes,
+  onShowNodesChange,
 }: MapControlsProps) {
   const { data: allRoles = [] } = useNodeRoles()
   const tilesets = getAllTilesets()
@@ -129,6 +141,19 @@ export default function MapControls({
           </label>
         </div>
 
+        {/* Show Nodes Toggle */}
+        <div className="map-control-group">
+          <label className="map-control-label">Show Nodes</label>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={showNodes}
+              onChange={(e) => onShowNodesChange(e.target.checked)}
+            />
+            <span className="toggle-slider"></span>
+          </label>
+        </div>
+
         {/* Coverage Overlay Toggle */}
         <div className="map-control-group">
           <label className="map-control-label">
@@ -145,6 +170,27 @@ export default function MapControls({
               checked={showCoverage}
               onChange={(e) => onShowCoverageChange(e.target.checked)}
               disabled={!coverageEnabled || coverageCellCount === 0}
+            />
+            <span className="toggle-slider"></span>
+          </label>
+        </div>
+
+        {/* Utilization Overlay Toggle */}
+        <div className="map-control-group">
+          <label className="map-control-label">
+            Utilization
+            {utilizationEnabled && utilizationCellCount > 0 && (
+              <span style={{ fontSize: '0.7rem', opacity: 0.7, marginLeft: '0.25rem' }}>
+                ({utilizationCellCount.toLocaleString()})
+              </span>
+            )}
+          </label>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={showUtilization}
+              onChange={(e) => onShowUtilizationChange(e.target.checked)}
+              disabled={!utilizationEnabled || utilizationCellCount === 0}
             />
             <span className="toggle-slider"></span>
           </label>

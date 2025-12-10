@@ -3,31 +3,33 @@ import { ImageOverlay } from 'react-leaflet'
 import type { LatLngBounds } from 'leaflet'
 import L from 'leaflet'
 
-interface CoverageCell {
+interface UtilizationCell {
   south: number
   west: number
   north: number
   east: number
-  count: number
+  value: number
+  color: string
 }
 
-interface CoverageImageOverlayProps {
-  cells: CoverageCell[]
+interface UtilizationImageOverlayProps {
+  cells: UtilizationCell[]
   blur?: number
 }
 
-// Get color for coverage count (returns [r, g, b, a])
-function getCoverageRGBA(count: number): [number, number, number, number] {
-  if (count <= 1) return [65, 105, 225, 180]    // Blue
-  if (count <= 2) return [50, 205, 50, 180]     // Green
-  if (count <= 3) return [255, 255, 0, 180]     // Yellow
-  if (count <= 5) return [255, 165, 0, 200]     // Orange
-  if (count <= 7) return [255, 69, 0, 200]      // Red-Orange
-  if (count <= 9) return [255, 0, 0, 210]       // Red
-  return [139, 0, 0, 210]                        // Dark Red
+// Get color for utilization value (0-100%), returns [r, g, b, a]
+function getUtilizationRGBA(value: number): [number, number, number, number] {
+  if (value < 0) return [0, 0, 0, 0]           // Transparent
+  if (value <= 10) return [0, 128, 0, 150]     // Green
+  if (value <= 25) return [50, 205, 50, 150]   // Lime Green
+  if (value <= 40) return [154, 205, 50, 150]  // Yellow-Green
+  if (value <= 55) return [255, 255, 0, 150]   // Yellow
+  if (value <= 70) return [255, 165, 0, 170]   // Orange
+  if (value <= 85) return [255, 69, 0, 170]    // Red-Orange
+  return [255, 0, 0, 190]                       // Red
 }
 
-export default function CoverageImageOverlay({ cells, blur = 8 }: CoverageImageOverlayProps) {
+export default function UtilizationImageOverlay({ cells, blur = 8 }: UtilizationImageOverlayProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [bounds, setBounds] = useState<LatLngBounds | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -65,7 +67,7 @@ export default function CoverageImageOverlay({ cells, blur = 8 }: CoverageImageO
 
     // Limit canvas size
     if (canvasWidth > 2000 || canvasHeight > 2000 || canvasWidth < 1 || canvasHeight < 1) {
-      console.warn('Coverage grid too large or too small for image overlay')
+      console.warn('Utilization grid too large or too small for image overlay')
       setImageUrl(null)
       return
     }
@@ -89,7 +91,7 @@ export default function CoverageImageOverlay({ cells, blur = 8 }: CoverageImageO
       const col = Math.round((cell.west - minLng) / cellWidth)
       const row = Math.round((maxLat - cell.north) / cellHeight) // Flip Y axis
 
-      const [r, g, b, a] = getCoverageRGBA(cell.count)
+      const [r, g, b, a] = getUtilizationRGBA(cell.value)
       ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a / 255})`
       ctx.fillRect(col * scale, row * scale, scale, scale)
     }
@@ -106,7 +108,7 @@ export default function CoverageImageOverlay({ cells, blur = 8 }: CoverageImageO
     setImageUrl(dataUrl)
 
     // Set bounds - shift south by half a cell to center cells on data points
-    // (positions are placed in cells based on their location, but cell extends north from there)
+    // (nodes are placed in cells based on their position, but cell extends north from there)
     const latOffset = cellHeight / 2
     setBounds(L.latLngBounds(
       [minLat - latOffset, minLng],
