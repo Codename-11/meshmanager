@@ -1017,20 +1017,32 @@ class MeshMonitorCollector(BaseCollector):
             f"Starting historical telemetry collection for all nodes from {self.source.name}"
         )
 
+        # Initialize collection status
+        self.collection_status.status = "collecting"
+        self.collection_status.current_batch = 0
+        self.collection_status.max_batches = 0
+        self.collection_status.total_collected = 0
+        self.collection_status.last_error = None
+
         total_collected = 0
 
         try:
+            nodes_url = f"{self.source.url}/api/v1/nodes"
+            logger.debug(f"Fetching nodes from: {nodes_url}")
+
             async with httpx.AsyncClient(timeout=60.0) as client:
                 headers = self._get_headers()
 
                 # First, get list of nodes
                 response = await client.get(
-                    f"{self.source.url}/api/v1/nodes",
+                    nodes_url,
                     headers=headers,
                 )
 
                 if response.status_code != 200:
                     logger.warning(f"Failed to fetch nodes: {response.status_code}")
+                    self.collection_status.status = "error"
+                    self.collection_status.last_error = f"HTTP {response.status_code}"
                     return 0
 
                 data = response.json()
@@ -1043,11 +1055,17 @@ class MeshMonitorCollector(BaseCollector):
 
                 logger.info(f"Found {len(nodes)} nodes for historical collection")
 
+                # Set max_batches to number of nodes for progress tracking
+                self.collection_status.max_batches = len(nodes)
+
                 # Collect historical telemetry for each node
                 for i, node in enumerate(nodes):
                     node_id = node.get("nodeId") or node.get("id")
                     if not node_id:
                         continue
+
+                    # Update progress (current node being processed)
+                    self.collection_status.current_batch = i + 1
 
                     count = await self.collect_node_historical_telemetry(
                         node_id=node_id,
@@ -1056,13 +1074,18 @@ class MeshMonitorCollector(BaseCollector):
                         delay_seconds=delay_seconds,
                     )
                     total_collected += count
+                    self.collection_status.total_collected = total_collected
 
                     # Small delay between nodes to be nice to the API
                     if i < len(nodes) - 1:
                         await asyncio.sleep(1.0)
 
+            self.collection_status.status = "complete"
+
         except Exception as e:
-            logger.error(f"Error in all-nodes historical collection: {e}")
+            logger.error(f"Error in all-nodes historical collection: {e}", exc_info=True)
+            self.collection_status.status = "error"
+            self.collection_status.last_error = str(e)
 
         logger.info(
             f"All-nodes historical collection complete: {total_collected} total records"
@@ -1088,15 +1111,15 @@ class MeshMonitorCollector(BaseCollector):
             self._historical_task = asyncio.create_task(self._collect_historical_background())
 
     async def _collect_historical_background(self) -> None:
-        """Background task for historical data collection."""
+        """Background task for historical data collection using per-node API."""
         try:
             # Wait a moment for the source to be fully committed and first poll to complete
             await asyncio.sleep(10)
-            # Collect historical data in batches with delays
-            await self.collect_historical_batch(
+            # Collect historical data for all nodes using per-node API
+            await self.collect_all_nodes_historical_telemetry(
+                days_back=7,
                 batch_size=500,
-                delay_seconds=10.0,  # 10 seconds between batches
-                max_batches=50,      # Up to 25,000 records total
+                delay_seconds=2.0,
             )
         except Exception as e:
             logger.error(f"Background historical collection failed: {e}")

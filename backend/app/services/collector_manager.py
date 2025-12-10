@@ -131,7 +131,7 @@ class CollectorManager:
         return statuses
 
     async def trigger_sync(self, source_id: str) -> bool:
-        """Trigger full data sync for a source.
+        """Trigger full data sync for a source using per-node historical collection.
 
         Returns True if sync was started, False if source not found.
         """
@@ -139,14 +139,15 @@ class CollectorManager:
         if not collector:
             return False
 
-        # Only MeshMonitor collectors support sync
-        if hasattr(collector, 'sync_all_data'):
+        # Use per-node historical collection for comprehensive sync
+        if hasattr(collector, 'collect_all_nodes_historical_telemetry'):
             import asyncio
-            asyncio.create_task(collector.sync_all_data(
+            asyncio.create_task(collector.collect_all_nodes_historical_telemetry(
+                days_back=7,
                 batch_size=500,
-                delay_seconds=5.0,
+                delay_seconds=2.0,
             ))
-            logger.info(f"Triggered full sync for source {source_id}")
+            logger.info(f"Triggered per-node historical sync for source {source_id}")
             return True
         return False
 
